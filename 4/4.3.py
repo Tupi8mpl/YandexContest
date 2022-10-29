@@ -2,6 +2,12 @@ import csv
 import re
 import prettytable
 from prettytable import PrettyTable
+from datetime import datetime
+
+
+def do_exit(message: str):
+    print(message)
+    exit()
 
 
 class Vacancy:
@@ -10,6 +16,8 @@ class Vacancy:
     def __init__(self, dictionary: dict, headers_array: list):
         self.headers = headers_array
         self.field_dictionary = {}
+        self.date_time_publishing = None
+        self.inv_dic_filter = {v: k for k, v in Data_Dictionary.dic_filter_for_table.items()}
         if dictionary:
             self.set_vacancy(dictionary)
 
@@ -21,8 +29,7 @@ class Vacancy:
         self.delete_html_tags_and_replace_bool_fields()
         self.salary_formatter()
 
-        date = self.field_dictionary["published_at"].split('T')[0].split('-')
-        self.field_dictionary['published_at'] = f"{date[2]}.{date[1]}.{date[0]}"
+        self.published_time_formatter()
 
         self.field_dictionary['key_skills'] = self.field_dictionary['key_skills'].replace('; ', '\n')
         self.experience_formatter()
@@ -43,8 +50,14 @@ class Vacancy:
         salary_to = f'{int(float(self.field_dictionary["salary_to"])):,}'.replace(',', ' ')
 
         self.field_dictionary['salary'] = f"{salary_from} - {salary_to} " \
-                                    f"({Data_Dictionary.dic_salary_currency[self.field_dictionary['salary_currency']]}) " \
-                                    f"{'(С вычетом налогов)' if self.field_dictionary['salary_gross'] != 'Да' else '(Без вычета налогов)'}"
+                                          f"({Data_Dictionary.dic_salary_currency[self.field_dictionary['salary_currency']]}) " \
+                                          f"{'(С вычетом налогов)' if self.field_dictionary['salary_gross'] != 'Да' else '(Без вычета налогов)'}"
+
+    def published_time_formatter(self):
+        hour, minute, second = self.field_dictionary["published_at"].split('T')[1].split('+')[0].split(':')
+        year, month, day = self.field_dictionary["published_at"].split('T')[0].split('-')
+        self.date_time_publishing = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
+        self.field_dictionary['published_at'] = f"{day}.{month}.{year}"
 
     def experience_formatter(self):
         for field in self.field_dictionary.items():
@@ -52,23 +65,25 @@ class Vacancy:
             if value in Data_Dictionary.dic_experience:
                 self.field_dictionary[key] = Data_Dictionary.dic_experience[value]
 
-    def is_correct_by_filter(self, filter) -> bool:
-        if filter.filter_str == "":
+    def is_correct_by_filter(self, filter: str) -> bool:
+        if filter == "":
             return True
         else:
-            if filter.get_key() == "Оклад":
-                return float(self.field_dictionary["salary_from"]) <= float(filter.get_value()) <= float(
+            temp = filter.split(": ")
+            key, value = temp[0], temp[1]
+            if key == "Оклад":
+                return float(self.field_dictionary["salary_from"]) <= float(value) <= float(
                     self.field_dictionary["salary_to"])
-            elif filter.get_key() == "Идентификатор валюты оклада":
-                return Data_Dictionary.dic_salary_currency[self.field_dictionary['salary_currency']] == filter.get_value()
-            elif filter.get_key() == "Навыки":
-                for skill in filter.get_value().split(", "):
+            elif key == "Идентификатор валюты оклада":
+                return Data_Dictionary.dic_salary_currency[
+                           self.field_dictionary['salary_currency']] == value
+            elif key == "Навыки":
+                for skill in value.split(", "):
                     if skill not in self.field_dictionary["key_skills"].split("\n"):
                         return False
                 return True
             else:
-                inv_dic_filter = {v: k for k, v in Data_Dictionary.dic_filter_for_table.items()}
-                return self.field_dictionary[inv_dic_filter[filter.get_key()]] == filter.get_value()
+                return self.field_dictionary[self.inv_dic_filter[key]] == value
 
     def get_values_for_table(self):
         values = []
@@ -109,27 +124,50 @@ class Data_Dictionary:
                       "between3And6": "От 3 до 6 лет",
                       "moreThan6": "Более 6 лет"}
 
+    dix_experience_to_int = {"Нет опыта": 0,
+                             "От 1 года до 3 лет": 2,
+                             "От 3 до 6 лет": 4,
+                             "Более 6 лет": 6}
+
+    dic_experience_sort = {"noExperience": "Нет опыта",
+                           "between1And3": "От 1 года до 3 лет",
+                           "between3And6": "От 3 до 6 лет",
+                           "moreThan6": "Более 6 лет"}
+
     dic_salary_currency = {"AZN": "Манаты",
                            "BYR": "Белорусские рубли",
                            "EUR": "Евро",
                            "GEL": "Грузинский лари",
                            "KZT": "Тенге",
+                           "KGS": "Киргизский сом",
                            "RUR": "Рубли",
                            "UAH": "Гривны",
                            "USD": "Доллары",
                            "UZS": "Узбекский сум"}
 
+    currency_to_rub = {
+        "AZN": 35.68,
+        "BYR": 23.91,
+        "EUR": 59.90,
+        "GEL": 21.74,
+        "KGS": 0.76,
+        "KZT": 0.13,
+        "RUR": 1,
+        "UAH": 1.64,
+        "USD": 60.66,
+        "UZS": 0.0055,
+    }
+
 
 class CSV:
-    def csv_reader(file_name: str, filter):
+    def csv_reader(file_name: str, filter: str):
         header_array = []
         vacancies_array = []
         is_empty_file = True
         with open(file_name, 'r', newline='', encoding='utf-8-sig') as csvfile:
             reader = csv.DictReader(csvfile)
             if not reader.fieldnames:
-                print("Пустой файл")
-                exit()
+                do_exit("Пустой файл")
             header_array = reader.fieldnames
             for row in reader:
                 is_empty_file = False
@@ -138,9 +176,32 @@ class CSV:
                     if vacancy.is_correct_by_filter(filter):
                         vacancies_array.append(vacancy)
         if is_empty_file:
-            print("Нет данных")
-            exit()
+            do_exit("Нет данных")
         return vacancies_array, header_array
+
+    def sorting_vacancies(vacancies_array: list, parameter_sort: str, reverse_sort: str):
+        if parameter_sort == "":
+            return True
+        else:
+            is_reverse = reverse_sort == "Да"
+            sort_lambda = None
+            if parameter_sort == "Оклад":
+                sort_lambda = lambda vacancy: (float(vacancy.field_dictionary["salary_to"]) *
+                                               Data_Dictionary.currency_to_rub[
+                                                   vacancy.field_dictionary["salary_currency"]] +
+                                               float(vacancy.field_dictionary["salary_from"]) *
+                                               Data_Dictionary.currency_to_rub[
+                                                   vacancy.field_dictionary["salary_currency"]]) // 2
+            elif parameter_sort == "Навыки":
+                sort_lambda = lambda vacancy: len(vacancy.field_dictionary["key_skills"].split("\n"))
+            elif parameter_sort == "Дата публикации вакансии":
+                sort_lambda = lambda vacancy: vacancy.date_time_publishing
+            elif parameter_sort == "Опыт работы":
+                sort_lambda = lambda vacancy: Data_Dictionary.dix_experience_to_int[
+                    vacancy.field_dictionary["experience_id"]]
+            else:
+                sort_lambda = lambda vacancy: vacancy.field_dictionary[vacancy.inv_dic_filter[parameter_sort]]
+            vacancies_array.sort(reverse=is_reverse, key=sort_lambda)
 
 
 class Table:
@@ -182,45 +243,49 @@ class Table:
         return start_index, end_index, fields_name
 
 
-class Filter:
-    def __init__(self, filter: str):
-        self.filter_str = filter
-        if not self.is_correct_filter():
-            exit()
-
-    def is_correct_filter(self) -> bool:
-        if self.filter_str == "":
-            return True
-        if ": " not in self.filter_str:
-            print("Формат ввода некорректен")
-            return False
-        for field in Data_Dictionary.dic_filter_for_table.items():
-            if self.filter_str.__contains__(field[0]) or self.filter_str.__contains__(field[1]):
-                return True
-        print("Параметр поиска некорректен")
-        return False
-
-    def get_key(self):
-        return self.filter_str.split(': ')[0]
-
-    def get_value(self):
-        return self.filter_str.split(': ')[1]
+def is_correct_filter(filter: str):
+    if filter == "":
+        return
+    if ": " not in filter:
+        do_exit("Формат ввода некорректен")
+    for field in Data_Dictionary.dic_filter_for_table.items():
+        if filter.__contains__(field[0]) or filter.__contains__(field[1]):
+            return
+    do_exit("Параметр поиска некорректен")
 
 
-file_name = input()
-filter_for_table = input()
-indexes = input()
-field_name = input()
+def is_correct_parameter_sort(parametr_sort: str):
+    if not parametr_sort:
+        return
+    if parameter_sort not in Data_Dictionary.dic_naming.values():
+        do_exit("Параметр сортировки некорректен")
 
-filter = Filter(filter_for_table)
 
-vacancies_array, headers_array = CSV.csv_reader(file_name, filter)
+def is_correct_reverse_sort(reverse_sort: str):
+    if not reverse_sort:
+        return
+    if reverse_sort != "Да" and reverse_sort != "Нет":
+        do_exit("Порядок сортировки задан некорректно")
+
+
+file_name = input("Введите название файла: ")
+filter_for_table = input("Введите параметр фильтрации: ")
+parameter_sort = input("Введите параметр сортировки: ")
+reverse_sort = input("Обратный порядок сортировки (Да / Нет): ")
+indexes = input("Введите диапазон вывода: ")
+field_name = input("Введите требуемые столбцы: ")
+
+is_correct_filter(filter_for_table)
+is_correct_parameter_sort(parameter_sort)
+is_correct_reverse_sort(reverse_sort)
+
+vacancies_array, headers_array = CSV.csv_reader(file_name, filter_for_table)
 
 table = Table()
 
 if len(vacancies_array) == 0:
-    print("Ничего не найдено")
+    do_exit("Ничего не найдено")
 else:
+    CSV.sorting_vacancies(vacancies_array, parameter_sort, reverse_sort)
     table.add_to_table(vacancies_array)
     table.print_table(indexes, field_name)
-
