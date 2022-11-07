@@ -46,3 +46,7 @@ https://contest.yandex.ru/contest/40164/run-report/73287349/
 ## 4.3
 
 https://contest.yandex.ru/contest/40164/run-report/73309371/
+
+## 5.1
+
+https://contest.yandex.ru/contest/40164/run-report/74023355/
