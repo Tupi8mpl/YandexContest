@@ -50,3 +50,7 @@ https://contest.yandex.ru/contest/40164/run-report/73309371/
 ## 5.1
 
 https://contest.yandex.ru/contest/40164/run-report/74023355/
+
+## 5.2
+
+https://contest.yandex.ru/contest/40164/run-report/74303714/
